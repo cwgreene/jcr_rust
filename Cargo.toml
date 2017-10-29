@@ -1,0 +1,6 @@
+[package]
+name = "jcr"
+version = "0.1.0"
+authors = ["Chris Greene <archgoon@gmail.com>"]
+
+[dependencies]
