@@ -1,3 +1,210 @@
+extern crate byteorder;
+
+use std::fs::File;
+use std::io::Cursor;
+use std::io::Read;
+
+use byteorder::{BigEndian, ReadBytesExt};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn it_works() {
+        //assert_eq!(read_class_file("data/Test.class"), 0xcafebabe);
+    }
+}
+
+#[derive(Debug)]
+struct ClassFile {
+    magic : u32,
+    minor : u16,
+    major : u16,
+    constant_pool : Vec<ConstantPoolEntry>,
+    c_access_flags : u16,
+    this_class : u16,
+    super_class : u16,
+    interfaces : Vec<Interface>,
+    fields : Vec<Field>,
+    methods : Vec<Method>,
+    attributes : Vec<Attribute>
+}
+
+struct Inteface {
+    interface_ix : u16
+}
+
+struct Attribute {
+    attribute_name_ix : u16,
+    info : Vec<u8>
+}
+
+struct Field {
+    access_flags : u16,
+    name_ix : u16,
+    descriptor_ix : u16,
+    attributes : Vec<Attribute>
+}
+
+struct Method {
+    access_flags : u16,
+    name_ix : u16,
+    descriptor_ix : u16,
+    attributes : Vec<Attribute>
+}
+
+const CONSTANT_CLASS : u8 = 7;
+const CONSTANT_FIELDREF : u8 = 9;
+const CONSTANT_METHODREF : u8 = 10;
+const CONSTANT_INTERFACEMETHODREF : u8 = 11;
+const CONSTANT_STRING : u8 = 8;
+const CONSTANT_INTEGER : u8 = 3;
+const CONSTANT_FLOAT : u8 = 4;
+const CONSTANT_LONG : u8 = 5;
+const CONSTANT_DOUBLE : u8 = 6;
+const CONSTANT_NAMEANDTYPE : u8 = 12;
+const CONSTANT_UTF8 : u8 = 1;
+const CONSTANT_METHODHANDLE : u8 = 15;
+const CONSTANT_METHODTYPE : u8 = 16;
+const CONSTANT_INVOKEDYNAMIC : u8 = 18;
+
+#[derive(Debug)]
+enum ConstantPoolEntry {
+    ConstClass { name_ix : u16 },
+    ConstFieldRef { class_ix : u16, name_and_type_ix : u16 },
+    ConstMethodRef { class_ix : u16, name_and_type_ix : u16 },
+    ConstInterfaceMethodRef { class_ix : u16, name_and_type_ix : u16 },
+    ConstString { string_ix : u16 },
+    ConstInt { int_word : u32 },
+    ConstFloat { float_word : u32 },
+    ConstLong { high_word : u32, low_word : u32},
+    ConstDouble { high_word : u32, low_word : u32},
+    ConstUtf8 { string : String },
+    ConstNameAndType { name_ix : u16, descriptor_ix : u16},
+    ConstMethodHandle { reference_kind : u8, reference_ix : u16 },
+    ConstMethodType { descriptor_ix : u16 },
+    ConstInvokeDynamic { boostrap_method_attr_ix : u16, name_and_type_ix : u16 },
+    ConstInvalid {}
+}
+
+fn read16(cursor : &mut Cursor<Vec<u8>>) -> u16 {
+    cursor.read_u16::<BigEndian>().unwrap()
+}
+
+fn read32(cursor : &mut Cursor<Vec<u8>>) -> u32 {
+    cursor.read_u32::<BigEndian>().unwrap()
+}
+
+fn read8(cursor : &mut Cursor<Vec<u8>>) -> u8 {
+    cursor.read_u8().unwrap()
+}
+
+fn read_string(cursor : &mut Cursor<Vec<u8>>) -> String {
+    let mut result = String::new();
+    let size = read16(cursor);
+    let mut buf = cursor.take(size as u64);
+    buf.read_to_string(&mut result);
+    result
+}
+
+fn get_constant_pool_entry(crs : &mut Cursor<Vec<u8>>, tag : u8) -> ConstantPoolEntry {
+    let result = match tag {
+        CONSTANT_CLASS => ConstantPoolEntry::ConstClass { name_ix : read16(crs) },
+        CONSTANT_FIELDREF => ConstantPoolEntry::ConstFieldRef {
+            class_ix : read16(crs),
+            name_and_type_ix: read16(crs)
+        },
+        CONSTANT_METHODREF => ConstantPoolEntry::ConstMethodRef {
+            class_ix : read16(crs),
+            name_and_type_ix: read16(crs)
+        },
+        CONSTANT_INTERFACEMETHODREF => ConstantPoolEntry::ConstInterfaceMethodRef {
+            class_ix : read16(crs),
+            name_and_type_ix: read16(crs)
+        },
+        CONSTANT_STRING => ConstantPoolEntry::ConstString { string_ix : read16(crs) },
+        CONSTANT_INTEGER => ConstantPoolEntry::ConstInt { int_word : read32(crs) },
+        CONSTANT_FLOAT => ConstantPoolEntry::ConstFloat { float_word : read32(crs) },
+        CONSTANT_LONG => ConstantPoolEntry::ConstLong {
+            high_word : read32(crs),
+            low_word : read32(crs)
+        },
+        CONSTANT_DOUBLE => ConstantPoolEntry::ConstDouble {
+            high_word : read32(crs),
+            low_word : read32(crs)
+        },
+        CONSTANT_UTF8 => ConstantPoolEntry::ConstUtf8 { string : read_string(crs) },
+        CONSTANT_METHODHANDLE => ConstantPoolEntry::ConstMethodHandle {
+            reference_kind : read8(crs),
+            reference_ix : read16(crs)
+        },
+        CONSTANT_METHODTYPE => ConstantPoolEntry::ConstMethodType { descriptor_ix : read16(crs) },
+        CONSTANT_INVOKEDYNAMIC => ConstantPoolEntry::ConstInvokeDynamic {
+            boostrap_method_attr_ix : read16(crs),
+            name_and_type_ix : read16(crs)
+        },
+        _ => ConstantPoolEntry::ConstInvalid {},
+    };
+    result
+}
+
+fn get_constant_pool(cursor : &mut Cursor<Vec<u8>>, cp_count : u16) -> Vec<ConstantPoolEntry> {
+    let mut pool = Vec::with_capacity((cp_count - 1) as usize);
+    let mut ix = 1;
+    while (ix < cp_count) {
+        let tag = read8(cursor);
+        let entry = get_constant_pool_entry(cursor, tag);
+        pool.push(entry);
+        if tag == CONSTANT_LONG || tag == CONSTANT_DOUBLE {
+            ix += 2;
+        } else {
+            ix += 1;
+        }
+    }
+    pool
+}
+
+fn get_constant_pool(cursor : &mut Cursor<Vec<u8>>, cp_count : u16) -> Vec<ConstantPoolEntry> {
+
+fn read_class_file (file_name : &str) -> ClassFile {
+    let mut f = File::open(file_name).expect("unable to open file.");
+    let mut v = Vec::new();
+    f.read_to_end(&mut v).unwrap();
+    let mut cursor = Cursor::new(v);
+
+    // Read in
+    let magic = read32(&mut cursor);
+    let minor = read16(&mut cursor);
+    let major = read16(&mut cursor);
+    let cp_count = read16(&mut cursor);
+    let cp = get_constant_pool(&mut cursor, cp_count);
+    let c_access_flags = read16(&mut cursor);
+    let this_class = read16(&mut cursor);
+    let super_class = read16(&mut cursor);
+    let interface_count = read16(&mut cursor);
+    let interfaces = get_interfaces(&mut cursor, interface_count);
+    let field_count = read16(&mut cursor);
+    let fields = get_fields(&mut cursor, field_count);
+    let methods_count = read16(&mut cursor);
+    let methods = get_methods(&mut cursor, method_count);
+    let attributes_count = read16(&mut cursor);
+    let attributes = get_attributes(&mut cursor, attributes_count);
+
+    ClassFile {
+        magic : magic,
+        minor : minor,
+        major : major,
+        constant_pool : cp,
+        c_access_flags : c_access_flags,
+        this_class : this_class,
+        super_class : super_class,
+        interfaces : interfaces,
+        fields : fields,
+        methods : methods,
+        attributes : attributes
+    }
+}
+
 fn main() {
-    println!("hi");
+    println!("{:?}", read_class_file("data/Test.class"));
 }
