@@ -3,6 +3,7 @@ extern crate byteorder;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
+use std::env;
 
 use byteorder::{BigEndian, ReadBytesExt};
 
@@ -21,7 +22,7 @@ struct ClassFile {
     minor : u16,
     major : u16,
     constant_pool : Vec<ConstantPoolEntry>,
-    c_access_flags : u16,
+    access_flags : u16,
     this_class : u16,
     super_class : u16,
     interfaces : Vec<Interface>,
@@ -30,15 +31,18 @@ struct ClassFile {
     attributes : Vec<Attribute>
 }
 
-struct Inteface {
+#[derive(Debug)]
+struct Interface {
     interface_ix : u16
 }
 
+#[derive(Debug)]
 struct Attribute {
     attribute_name_ix : u16,
     info : Vec<u8>
 }
 
+#[derive(Debug)]
 struct Field {
     access_flags : u16,
     name_ix : u16,
@@ -46,6 +50,7 @@ struct Field {
     attributes : Vec<Attribute>
 }
 
+#[derive(Debug)]
 struct Method {
     access_flags : u16,
     name_ix : u16,
@@ -84,7 +89,7 @@ enum ConstantPoolEntry {
     ConstMethodHandle { reference_kind : u8, reference_ix : u16 },
     ConstMethodType { descriptor_ix : u16 },
     ConstInvokeDynamic { boostrap_method_attr_ix : u16, name_and_type_ix : u16 },
-    ConstInvalid {}
+    ConstInvalid { tag: u8 }
 }
 
 fn read16(cursor : &mut Cursor<Vec<u8>>) -> u16 {
@@ -138,12 +143,16 @@ fn get_constant_pool_entry(crs : &mut Cursor<Vec<u8>>, tag : u8) -> ConstantPool
             reference_kind : read8(crs),
             reference_ix : read16(crs)
         },
+        CONSTANT_NAMEANDTYPE => ConstantPoolEntry::ConstNameAndType {
+            name_ix : read16(crs),
+            descriptor_ix : read16(crs)
+        },
         CONSTANT_METHODTYPE => ConstantPoolEntry::ConstMethodType { descriptor_ix : read16(crs) },
         CONSTANT_INVOKEDYNAMIC => ConstantPoolEntry::ConstInvokeDynamic {
             boostrap_method_attr_ix : read16(crs),
             name_and_type_ix : read16(crs)
         },
-        _ => ConstantPoolEntry::ConstInvalid {},
+        _ => ConstantPoolEntry::ConstInvalid {tag: tag},
     };
     result
 }
@@ -164,9 +173,68 @@ fn get_constant_pool(cursor : &mut Cursor<Vec<u8>>, cp_count : u16) -> Vec<Const
     pool
 }
 
-fn get_constant_pool(cursor : &mut Cursor<Vec<u8>>, cp_count : u16) -> Vec<ConstantPoolEntry> {
+fn get_methods(cursor : &mut Cursor<Vec<u8>>) -> Vec<Method> {
+    let method_count = read16(cursor);
+    let mut result = Vec::with_capacity(method_count as usize);
+    let mut ix = 0;
+    while (ix < method_count) {
+        result.push(Method {
+            access_flags : read16(cursor),
+            name_ix : read16(cursor),
+            descriptor_ix : read16(cursor),
+            attributes : get_attributes(cursor)   
+        });
+        ix += 1;
+    }
+    result
+}
 
-fn read_class_file (file_name : &str) -> ClassFile {
+fn get_attributes(cursor : &mut Cursor<Vec<u8>>) -> Vec<Attribute> {
+    let attribute_count = read16(cursor);
+    let mut result = Vec::with_capacity(attribute_count as usize);
+    let mut ix = 0;
+    while (ix < attribute_count) {
+        let attribute_name_ix = read16(cursor);
+        let length = read32(cursor);
+        let mut info = Vec::new();
+        cursor.take(length as u64).read_to_end(&mut info).unwrap();
+        result.push(Attribute {
+            attribute_name_ix : attribute_name_ix,
+            info : info
+        });
+        ix += 1;
+    }
+    result
+}
+
+fn get_interfaces(cursor : &mut Cursor<Vec<u8>>) -> Vec<Interface> {
+    let interface_count = read16(cursor);
+    let mut result = Vec::with_capacity(interface_count as usize);
+    let mut ix = 0;
+    while (ix < interface_count) {
+        result.push(Interface { interface_ix : read16(cursor) } );
+        ix += 1;
+    }
+    result
+}
+
+fn get_fields(cursor : &mut Cursor<Vec<u8>>) -> Vec<Field> {
+    let field_count = read16(cursor);
+    let mut result = Vec::with_capacity(field_count as usize);
+    let mut ix = 0;
+    while (ix < field_count) {
+        result.push(Field {
+            access_flags : read16(cursor),
+            name_ix : read16(cursor),
+            descriptor_ix : read16(cursor),
+            attributes : get_attributes(cursor)
+        });
+        ix += 1;
+    }
+    result
+}
+
+fn read_class_file (file_name : String) -> ClassFile {
     let mut f = File::open(file_name).expect("unable to open file.");
     let mut v = Vec::new();
     f.read_to_end(&mut v).unwrap();
@@ -178,24 +246,20 @@ fn read_class_file (file_name : &str) -> ClassFile {
     let major = read16(&mut cursor);
     let cp_count = read16(&mut cursor);
     let cp = get_constant_pool(&mut cursor, cp_count);
-    let c_access_flags = read16(&mut cursor);
+    let access_flags = read16(&mut cursor);
     let this_class = read16(&mut cursor);
     let super_class = read16(&mut cursor);
-    let interface_count = read16(&mut cursor);
-    let interfaces = get_interfaces(&mut cursor, interface_count);
-    let field_count = read16(&mut cursor);
-    let fields = get_fields(&mut cursor, field_count);
-    let methods_count = read16(&mut cursor);
-    let methods = get_methods(&mut cursor, method_count);
-    let attributes_count = read16(&mut cursor);
-    let attributes = get_attributes(&mut cursor, attributes_count);
+    let interfaces = get_interfaces(&mut cursor);
+    let fields = get_fields(&mut cursor);
+    let methods = get_methods(&mut cursor);
+    let attributes = get_attributes(&mut cursor);
 
     ClassFile {
         magic : magic,
         minor : minor,
         major : major,
         constant_pool : cp,
-        c_access_flags : c_access_flags,
+        access_flags : access_flags,
         this_class : this_class,
         super_class : super_class,
         interfaces : interfaces,
@@ -206,5 +270,7 @@ fn read_class_file (file_name : &str) -> ClassFile {
 }
 
 fn main() {
-    println!("{:?}", read_class_file("data/Test.class"));
+    for file in env::args().skip(1) {
+        println!("{:?}", read_class_file(file.to_string()));
+    }
 }
