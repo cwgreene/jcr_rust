@@ -108,7 +108,7 @@ fn read_string(cursor : &mut Cursor<Vec<u8>>) -> String {
     let mut result = String::new();
     let size = read16(cursor);
     let mut buf = cursor.take(size as u64);
-    buf.read_to_string(&mut result);
+    buf.read_to_string(&mut result).unwrap();
     result
 }
 
@@ -160,7 +160,7 @@ fn get_constant_pool_entry(crs : &mut Cursor<Vec<u8>>, tag : u8) -> ConstantPool
 fn get_constant_pool(cursor : &mut Cursor<Vec<u8>>, cp_count : u16) -> Vec<ConstantPoolEntry> {
     let mut pool = Vec::with_capacity((cp_count - 1) as usize);
     let mut ix = 1;
-    while (ix < cp_count) {
+    while ix < cp_count {
         let tag = read8(cursor);
         let entry = get_constant_pool_entry(cursor, tag);
         pool.push(entry);
@@ -177,7 +177,7 @@ fn get_methods(cursor : &mut Cursor<Vec<u8>>) -> Vec<Method> {
     let method_count = read16(cursor);
     let mut result = Vec::with_capacity(method_count as usize);
     let mut ix = 0;
-    while (ix < method_count) {
+    while ix < method_count {
         result.push(Method {
             access_flags : read16(cursor),
             name_ix : read16(cursor),
@@ -193,7 +193,7 @@ fn get_attributes(cursor : &mut Cursor<Vec<u8>>) -> Vec<Attribute> {
     let attribute_count = read16(cursor);
     let mut result = Vec::with_capacity(attribute_count as usize);
     let mut ix = 0;
-    while (ix < attribute_count) {
+    while ix < attribute_count {
         let attribute_name_ix = read16(cursor);
         let length = read32(cursor);
         let mut info = Vec::new();
@@ -211,7 +211,7 @@ fn get_interfaces(cursor : &mut Cursor<Vec<u8>>) -> Vec<Interface> {
     let interface_count = read16(cursor);
     let mut result = Vec::with_capacity(interface_count as usize);
     let mut ix = 0;
-    while (ix < interface_count) {
+    while ix < interface_count {
         result.push(Interface { interface_ix : read16(cursor) } );
         ix += 1;
     }
@@ -222,7 +222,7 @@ fn get_fields(cursor : &mut Cursor<Vec<u8>>) -> Vec<Field> {
     let field_count = read16(cursor);
     let mut result = Vec::with_capacity(field_count as usize);
     let mut ix = 0;
-    while (ix < field_count) {
+    while ix < field_count {
         result.push(Field {
             access_flags : read16(cursor),
             name_ix : read16(cursor),
