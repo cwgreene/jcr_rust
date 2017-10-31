@@ -89,6 +89,7 @@ enum ConstantPoolEntry {
     ConstMethodHandle { reference_kind : u8, reference_ix : u16 },
     ConstMethodType { descriptor_ix : u16 },
     ConstInvokeDynamic { boostrap_method_attr_ix : u16, name_and_type_ix : u16 },
+    ConstUnused,
     ConstInvalid { tag: u8 }
 }
 
@@ -100,7 +101,7 @@ fn read32(cursor : &mut Cursor<Vec<u8>>) -> u32 {
     cursor.read_u32::<BigEndian>().unwrap()
 }
 
-fn read8(cursor : &mut Cursor<Vec<u8>>) -> u8 {
+pub fn read8(cursor : &mut Cursor<Vec<u8>>) -> u8 {
     cursor.read_u8().unwrap()
 }
 
@@ -165,6 +166,7 @@ fn get_constant_pool(cursor : &mut Cursor<Vec<u8>>, cp_count : u16) -> Vec<Const
         let entry = get_constant_pool_entry(cursor, tag);
         pool.push(entry);
         if tag == CONSTANT_LONG || tag == CONSTANT_DOUBLE {
+            pool.push(ConstantPoolEntry::ConstUnused);
             ix += 2;
         } else {
             ix += 1;
