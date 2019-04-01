@@ -1,9 +1,15 @@
 extern crate byteorder;
+extern crate serde;
+
+#[macro_use]
+extern crate serde_derive;
 
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
 use std::env;
+
+use serde::{Serialize, Deserialize};
 
 use byteorder::{BigEndian, ReadBytesExt};
 
@@ -16,7 +22,7 @@ mod tests {
     }
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct ClassFile {
     magic : u32,
     minor : u16,
@@ -31,18 +37,18 @@ struct ClassFile {
     attributes : Vec<Attribute>
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Interface {
     interface_ix : u16
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Attribute {
     attribute_name_ix : u16,
     info : Vec<u8>
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Field {
     access_flags : u16,
     name_ix : u16,
@@ -50,7 +56,7 @@ struct Field {
     attributes : Vec<Attribute>
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Method {
     access_flags : u16,
     name_ix : u16,
@@ -73,7 +79,7 @@ const CONSTANT_METHODHANDLE : u8 = 15;
 const CONSTANT_METHODTYPE : u8 = 16;
 const CONSTANT_INVOKEDYNAMIC : u8 = 18;
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 enum ConstantPoolEntry {
     ConstClass { name_ix : u16 },
     ConstFieldRef { class_ix : u16, name_and_type_ix : u16 },
@@ -272,7 +278,22 @@ fn read_class_file (file_name : String) -> ClassFile {
 }
 
 fn main() {
+    let mut json = false;
+    for param in env::args().skip(1) {
+        if param == "--json" {
+            json = true;
+        }
+    }
     for file in env::args().skip(1) {
-        println!("{:?}", read_class_file(file.to_string()));
+        if file == "--json" {
+            continue;
+        }
+        let classfile = read_class_file(file.to_string());
+        if json == true {
+            let json_str = serde_json::to_string(&classfile).unwrap();
+            println!("{}", json_str);
+        } else {
+            println!("{:?}", classfile);
+        }
     }
 }
