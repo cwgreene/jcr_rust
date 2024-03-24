@@ -18,7 +18,8 @@ mod tests {
     use super::*;
     #[test]
     fn it_works() {
-        //assert_eq!(read_class_file("data/Test.class"), 0xcafebabe);
+        let result : ClassFile = read_class_file("data/Test.class".to_string());
+        assert_eq!(result.magic, 0xcafebabe);
     }
 }
 
